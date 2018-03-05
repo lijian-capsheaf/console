@@ -1,0 +1,278 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+import time
+from crypt import crypt
+import subprocess
+import os
+import sys
+from getpass import getpass
+import consh.ansi as ansi
+# from endian.core.settingsfile import SettingsFile
+
+MENU = """%s %s
+Management URL: https://%s:10443
+LAN IP        : %s
+NOW:%s
+-----------------------
+"""
+"""
+import tty
+import termios
+
+def getread():
+    def getch():
+	fd = sys.stdin.fileno()
+	sys.stdin.flush()
+	old_ttyinfo = termios.tcgetattr(fd)
+	try:
+	    tty.setraw(fd)
+	    ch = sys.stdin.read(1)
+	finally:
+	    termios.tcsetattr(fd, termios.TCSADRIAN, old_ttyinfo)
+	return ch
+ """
+
+# out_write is a output function
+# in_read is a input function
+def out_write(msg = "", *args,  **argv):
+    if args:
+        msg = msg % args
+    sys.stdout.write(str(msg))
+    sys.stdout.flush()
+    if not argv.get("ban_newline", False):
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+def in_read(prompt = ""):
+    if prompt != "":
+	sys.stdout.write(str(prompt))
+	sys.stdout.flush()
+    in_put = raw_input().strip("\r\n")
+    sys.stdin.flush()
+    return in_put
+
+def getTitle():
+    try:
+	
+	from endian.core.settingsfile import SettingsFile
+	settings = SettingsFile("from endian.core.settingsfile import SettingsFile")	
+	return settings.get("SYSTEM_EN_UC_TITLE") + "/"  + settings.get("SYSTEM_VERSION")
+    except Exception,e:
+	out_write(str(e))
+	return  "UNKNOWN"
+
+
+def getGreenNet():
+    try:
+	from endian.core.settingsfile import SettingsFile
+        settings = SettingsFile("/var/efw/ethernet/settings")
+        green_ip = "%s/%s" % (settings.get("GREEN_ADDRESS"), settings.get("GREEN_CIDR"))
+        green_dev = settings.get("GREEN_DEV")
+        
+        # try to get the current green ip from "ip addr"
+        output = os.popen("/sbin/ip addr show %s" % green_dev).read()
+        ip = None
+        for line in output.split("\n"):
+            if line.strip().startswith("inet"):
+                if ip:
+                    # ip already found, this is a second ip, return the one from settings
+                    return green_ip
+                else:
+                    ip = line.strip().split()[1]
+        green_ip = ip or green_ip                
+    except Exception,e:
+        out_write(str(e))
+        green_ip = "UNKNOWN"
+    return green_ip
+
+
+def checkAdminPassword():
+    
+    CONF_PATH = '/var/efw/userinfo/userslist'
+    CONF_PATH_DEFAULT = '/var/efw/userinfo/default_userslist'
+    if not os.path.exists(CONF_PATH):
+       	out_write("Fatal Error: admin config is not existed, will reset it !")
+        os.system("cp %s %s"%(CONF_PATH_DEFAULT, CONF_PATH))
+    
+    adminpwd = getpass("Enter Admin Password: ") 
+    f = open(CONF_PATH, "r")
+    for line in f.xreadlines():
+        if line == "":
+            continue
+        items = line.split(",")
+        if items[0] == "admin":
+            f.close()
+	    
+            # res = md5_crypt(adminpwd) == items[1]
+            res = adminpwd == items[1]
+	    if not res:
+                in_read("Wrong password")
+            return res
+    f.close()
+    return False
+
+def md5_crypt(passwd):
+    if type(passwd) is types.StringType:  
+        try:  
+            import hashlib  
+            m = hashlib.md5()  
+        except ImportError:  
+            # for python < 2.5  
+            import md5  
+            m = md5.new()  
+        m.update(passwd)  
+        return repr(m.hexdigest())  
+    else:  
+        return ''  
+
+
+# Shell
+class ActionShell(object):
+    description = "Shell console"
+
+    def run(self):
+	from consh.shell import main
+        os.system("clear")
+        main()
+
+# Reboot
+class ActionReboot(object):
+    description = "Reboot console"
+
+    def run(self):
+        out_write(ansi.RED + ansi.BOLD + "Are you sure that you want to Reboot? [y/N]" + ansi.RESET, ban_newline = True)
+        if in_read().lower() == "y":
+            out_write("Rebooting...")
+            time.sleep(3)
+            os.system("/sbin/shutdown -r now")
+        else:
+            out_write("Aborting...")
+
+
+# ChangePassword
+class ActionAdminPassword(object):
+    description = "Change Admin Password"
+
+    def run(self):
+        if not checkAdminPassword():
+            return
+            
+        password = getpass("New Password: ")
+        confirm = getpass("Confirm Password: ")
+        
+        if password != confirm:
+            out_write("Passwords do not match!")
+            return
+        
+        if len(password) < 8:
+            out_write("Password should be at least 8 characters long")
+            return
+        context = open("/var/efw/userinfo/userslist","r").read()
+        fout = open("/var/efw/userinfo/userslist","w")
+        lines = context.split("\n")
+        for line in lines:
+            if line == "":
+                continue
+            if line.startswith("admin,"):
+                items = line.split(",")
+                # items[1] = md5_crypt(password)
+		items[1] = password
+                new_line = ",".join(items)
+                fout.write(new_line+"\n")
+            else:
+                fout.write(line+"\n")
+        fout.close()
+        out_write("Password Changed!")
+
+# Default set
+class ActionFactoryDefaults(object):
+    description = "Restore Factory Defaults"
+
+    def run(self):
+        out_write("*** WARNING: This will destroy all your current settings ***")
+        out_write()
+        out_write("Are you *REALLY* sure that you want to ? [y/N]")
+        if in_read().lower() == "y":
+            out_write("Restoring Factory Defaults (System will Reboot)...")
+            system("/usr/local/bin/factory-default.sh &>/dev/null")
+
+
+ACTIONS = [ActionShell(),
+           ActionReboot(),
+           ActionFactoryDefaults()]
+
+
+# console
+class console(object):
+    description = "The entrance of the back end console"
+    def _init_(self):
+	signal.signal(signal.SIGINT, signal.SIG_IGN)
+	signal.signal(signal.SIGTSTP, signal.SIG_IGN)
+
+    def main(self):
+        while True:
+            os.system("clear")
+            choice = None
+            # show some infomations and interface
+	    green_net = getGreenNet()
+            green_ip = green_net.split("/")[0]
+	    title = getTitle()
+	    title_name = "UNKNOWN"
+	    title_version = "UNKNOWN"
+	    if "/" in title:
+		
+	    	title_name = title.split("/")[0]
+	    	title_version = title.split("/")[1]
+	    time_now = time.asctime(time.localtime(time.time()))
+            out_write(MENU % (title_name, title_version, green_ip, green_net, time_now))
+            for action in ACTIONS:
+                index = ACTIONS.index(action)
+                out_write(str(index) + ")    " + action.description)
+            out_write()
+
+            # input choice
+            try:
+		value = in_read("Chioce:")
+		if value == "":
+		    os.system("clear")
+		    continue
+
+            except KeyboardInterrupt:
+                continue
+		
+            # exit console
+            if value in ["q", "Q","exit", "exit()"]:
+		os.system("clear")
+                sys.exit(0)
+
+            # convert to number
+            try:
+                choice = int(value)
+            except:
+                try:
+                    in_read("Invalid choice, press ENTER")
+                    continue
+                except KeyboardInterrupt:
+                    continue
+
+            # Determine whether this with the range
+            if choice not in range(len(ACTIONS)):
+                try:
+                    in_read("Invalid choice, press ENTER")
+                    continue
+                except KeyboardInterrupt:
+                    continue
+            try:
+                ACTIONS[choice].run()
+
+            except Exception,e:
+		out_write(e)
+                out_write("Program Rebooting...")
+                out_write("Please wait...")
+                ActionReboot().run()
+
+console().main()
+
+if __name__ == "__main__":
+    console().main()

@@ -1,0 +1,7 @@
+HISTORY_FILENAME=/var/consh/.history
+HISTORY_LENGTH=5000
+LOG_FILENAME=/var/consh/.shell.log
+LOG_LENGTH=1000
+ERROR_FILENAME=/var/consh/.error
+ERROR_LENGTH=5000
+syscommand=False

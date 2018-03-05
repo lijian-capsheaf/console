@@ -1,0 +1,118 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+__author__ = "lijian"
+__date__ = "2018.03.01"
+__version__ = "1.0.0"
+
+# tty serial
+# set [agetty, mingetty, grub]
+# tty:      mingetty
+# serial:   agetty, grub
+
+import os
+import sys
+
+FILE_PATH = "/etc/init/"
+
+def file_deal(file_name, file_content):
+    if not os.path.exists(file_name):
+        os.system("touch %s" % file_name)
+    try:
+        f = file(file_name, "wb")
+        f.write(file_content)
+        result = 1
+    except Exception,e:
+        print str(e)
+        result = 0
+    finally:
+        f.close()
+    return result
+
+def set_tty():
+    file_content = "# tty.override\n\nstop on runlevel [S016]\n\nrespawn\ninstance $TTY\nexec /sbin/mingetty-console $TTY\nusage 'tty TTY=/dev/ttyX  - where X is console id'\n"
+    filename = "tty.override"
+    # write file 
+    if file_deal(FILE_PATH + filename, file_content):
+        return True
+    else:
+        return False
+
+def set_serial():
+    file_content = "# serial.override\n\nstart on fedora.serial-console-available DEV=* and stopped rc RUNLEVEL=[2345]\nstop on runlevel [S016]\n\ninstance $DEV\nrespawn\n\npre-start exec /sbin/securetty $DEV\nexec /sbin/agetty-console -L  /dev/$DEV $SPEED vt100-nav\npost-stop exec /sbin/initctl emit --no-wait fedora.serial-console-available DEV=$DEV SPEED=$SPEED\nusage 'DEV=ttySX SPEED=Y  - where X is console id and Y is baud rate'\n"
+    filename = "serial.override"
+    # 
+    if file_deal(FILE_PATH + filename, file_content):
+        return True
+    else:
+        return False
+
+def set_all():
+    t = 0
+    s = 0
+    if set_tty():
+        t = 1
+    if set_serial():
+        s = 1
+    if t & s:
+        return True
+    if t:
+        print "tty has set success!"
+    else:
+        print "tty  set fail!"
+    if s:
+        print "serial has set success!"
+    else:
+        print "serial set fail!"
+    return False
+
+def main():
+    options = "set-console:\n\t[-a/--all]\t\tset tty and serial\n\t[-t/--tty]\t\tset tty\n\t[-s/--serial]\t\tset tty\n\t[-h/--help]\t\tget help"
+
+    set_a = ["-a", "all", "--all"]
+    set_t = ["-t", "tty", "--tty"]
+    set_s = ["-s", "serial", "--serial"]
+    set_h = ["-h", "help", "--help", "?"]
+
+    # get argv
+    args = sys.argv
+    args.pop(0)
+    if len(args) == 0:
+        if set_all():
+            print "tty and serial all set success!"
+        return
+
+    else:
+        if args[0] in set_a:
+            # set all
+            if set_all():
+                print "tty and serial all set success!"
+            return
+
+        if args[0] in set_t:
+            # set tty
+            if set_tty():
+                print "tty has set success!"
+            else:
+                print "tty set fail!"
+            return 
+
+        if args[0] in set_s:
+            # set serial
+            if set_serial():
+                print "serial has set success!"
+            else:
+                print "serial set fail!"
+            return 
+
+        if args[0] in set_h:
+             # get help            
+            print options
+            return 
+
+        else:
+            # no opt
+            print "has no %s option" % args[0]
+            return 
+
+main()
